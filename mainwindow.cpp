@@ -56,6 +56,10 @@ void MainWindow::initUI()
     ui->cboFlowContral->addItem("RTS/CTS",QSerialPort::HardwareControl);
     ui->cboFlowContral->addItem("XON/XOFF",QSerialPort::SoftwareControl);
 
+
+    // 读取上次的设置
+    ui->cboPortName->setCurrentText(gSetting->value("LastSelectSerialPort").toString());
+    ui->cboBaudrate->setCurrentText(gSetting->value("LastSelectSerialBaud").toString());
     ui->btnSend->setDisabled(true);
 
 }
@@ -81,10 +85,6 @@ void MainWindow::initSerialPort()
             ui->cboPortName->clear();
             ui->cboPortName->addItems(oldPortStringList);
         }
-
-        // 读取上次的设置
-        ui->cboPortName->setCurrentText(gSetting->value("LastSelectSerialPort").toString());
-        ui->cboBaudrate->setCurrentText(gSetting->value("LastSelectSerialBaud").toString());
     }
 }
 /*
@@ -100,18 +100,6 @@ void MainWindow::initTimer()
 void MainWindow::timerUpdateSerialPort()
 {
     initSerialPort();
-}
-/*
- * 函数功能：接收串口发出数据将其显示到界面上
- */
-void MainWindow::receiveData()
-{
-    QByteArray data = gSerialPort->readAll();
-    //将接收的数据进行转换
-    QString strText = QString(data);
-
-    //显示当前接收的数据
-    ui->RecveeiveplainTextEdit->appendPlainText(strText);
 }
 /*
  * 函数功能：定义窗口关闭时弹出的提示窗口的操作
@@ -215,5 +203,81 @@ void MainWindow::on_checkBox_stateChanged(int arg1)
     {
         killTimer(gSendDataTimer);
         ui->lineEdit->setDisabled(false);
+    }
+}
+/*
+ * 函数功能：接收串口数据
+ */
+void MainWindow::receiveData()
+{
+    QString outText;
+    QByteArray baData = gSerialPort->readAll();
+
+    //将接收的数据进行转换
+    QString strText = QString(baData.toHex());
+
+    if(baData.length() >= 4)
+    {
+        // 找数据头
+        if(baData.indexOf('a', 0) && baData.indexOf('a', 1))
+        {
+            // 计算总包长
+            uint8_t packLen = baData[3] + 5;
+            // 总包长，是一个完整的包
+            if(baData.length() == packLen)
+            {
+                // 解包
+                decodeData(strText, &outText, baData[3]);
+            }
+            else
+            {
+                qDebug() << "ERROR Package!";
+            }
+        }
+    }
+    //显示当前接收的数据
+    ui->RecveeiveplainTextEdit->appendPlainText(strText + " decode: " + outText);
+}
+/*
+ * 函数功能：数据解包
+ */
+void MainWindow::decodeData(QString in, QString *out, uint8_t len)
+{
+    /*****
+     * aaaa02061234567866996f decode: 12345678996f
+     * aaaa0202567826 decode: 5678
+     *
+     */
+    QString midStr = in.remove(0,4*2);
+    *out = midStr.remove(len*2, 1*2);
+}
+/*
+ * 函数功能：数据封包
+ */
+void MainWindow::encodeData(QByteArray in, QByteArray *out, uint8_t len)
+{
+    uint8_t cnt=0, i=0, sum = 0;
+    uint8_t send_buff[100] = {0};
+
+    //char 类型为两个字节
+    send_buff[cnt++] = 0xAA;  //帧头
+    send_buff[cnt++] = 0xAA;
+    send_buff[cnt++] = 0x02;  //功能字
+    send_buff[cnt++] = 0;     //需要发送数据的字节数，暂时给0，后面再赋值。
+    for(int i = 0; i < len; i++)
+    {
+        send_buff[cnt++] = in[i]>>8;       //数据的高8位
+        send_buff[cnt++] = in[i]&0x00ff;  //数据的低8位
+    }
+
+    send_buff[3] = cnt-4;   //赋值数据包长度
+    for(i = 0; i < cnt; i++)
+      sum = sum + send_buff[i];  //校验位计算
+
+    send_buff[cnt++] = sum; //赋值校验位
+
+    for(int n = 0; n < cnt; n++)
+    {
+        out->append(send_buff[n], 1);
     }
 }
