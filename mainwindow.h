@@ -32,7 +32,7 @@ private:
     //重写closeEvent函数
     void closeEvent(QCloseEvent *);
     //封包函数
-    void encodeData(QByteArray in, QByteArray *out, uint8_t len);
+    QByteArray encodeData(QByteArray in);
     //解包函数
     void decodeData(QString in, QString *out, uint8_t len);
 
