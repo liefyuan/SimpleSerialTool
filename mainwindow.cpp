@@ -181,19 +181,24 @@ void MainWindow::on_btnOpenPort_clicked()
  */
 void MainWindow::on_btnSend_clicked()
 {
+#if 0
     //获取所要发送的文本
     QString strSend = ui->SendplainTextEdit->toPlainText();
     //将所要发送的文本存入arr变量
     QByteArray arr = strSend.toUtf8();
 
     gSerialPort->write(arr);
+#else
+    QByteArray inArr = ui->SendplainTextEdit->toPlainText().toUtf8();
+
+    gSerialPort->write(encodeData(inArr));
+#endif
 }
 /*
  * 函数功能：定时发送状态改变
  */
 void MainWindow::on_checkBox_stateChanged(int arg1)
 {
-    qDebug() << "state:" << arg1;
     if(arg1 == 2)
     {
         gSendDataTimer = startTimer(ui->lineEdit->text().toInt(), Qt::CoarseTimer);
@@ -244,20 +249,30 @@ void MainWindow::receiveData()
 void MainWindow::decodeData(QString in, QString *out, uint8_t len)
 {
     /*****
-     * aaaa02061234567866996f decode: 12345678996f
-     * aaaa0202567826 decode: 5678
+     * AA AA 02 06 12 34 56 78 66 99 6F decode: 123456786699
+     * AA AA 02 02 56 78 26 decode: 5678
      *
      */
+
+    /******************************************************
+     *
+     *  包头（2B） 功能字（1B） 长度（1B） 内容（1~255B） 校验（1B）
+     *
+     *
+     *
+     *
+     * ****************************************************/
     QString midStr = in.remove(0,4*2);
     *out = midStr.remove(len*2, 1*2);
 }
 /*
  * 函数功能：数据封包
  */
-void MainWindow::encodeData(QByteArray in, QByteArray *out, uint8_t len)
+QByteArray MainWindow::encodeData(QByteArray in)
 {
-    uint8_t cnt=0, i=0, sum = 0;
-    uint8_t send_buff[100] = {0};
+    uint16_t cnt=0, i=0, sum = 0;
+    uint8_t send_buff[300] = {0};
+    uint16_t len = in.size();
 
     //char 类型为两个字节
     send_buff[cnt++] = 0xAA;  //帧头
@@ -266,8 +281,7 @@ void MainWindow::encodeData(QByteArray in, QByteArray *out, uint8_t len)
     send_buff[cnt++] = 0;     //需要发送数据的字节数，暂时给0，后面再赋值。
     for(int i = 0; i < len; i++)
     {
-        send_buff[cnt++] = in[i]>>8;       //数据的高8位
-        send_buff[cnt++] = in[i]&0x00ff;  //数据的低8位
+        send_buff[cnt++] = in[i];
     }
 
     send_buff[3] = cnt-4;   //赋值数据包长度
@@ -276,8 +290,7 @@ void MainWindow::encodeData(QByteArray in, QByteArray *out, uint8_t len)
 
     send_buff[cnt++] = sum; //赋值校验位
 
-    for(int n = 0; n < cnt; n++)
-    {
-        out->append(send_buff[n], 1);
-    }
+    QByteArray out(reinterpret_cast<char*>(send_buff), cnt);
+
+    return out;
 }
